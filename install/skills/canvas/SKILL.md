@@ -35,23 +35,37 @@ CANVAS_PORT=$(cat "$PORT_FILE")
 ```
 
 ### 3. Preflight: post session header
-```bash
-NOW=$(date "+%A, %B %-d %Y  %H:%M")
-curl -s -X POST "http://127.0.0.1:${CANVAS_PORT}/cmd" \
-  -H 'Content-Type: application/json' \
-  -d "{\"cmd\":\"text\",\"id\":\"_session\",\"title\":\"Session\",\"markdown\":\"**Started:** ${NOW}\"}"
+```python
+import urllib.request, json, os, subprocess
+port = open(f"/tmp/canvas-{os.environ['CLAUDE_CODE_SESSION_ID']}.port").read().strip()
+now = subprocess.check_output(['date', '+%A, %B %-d %Y  %H:%M']).decode().strip()
+cx(port, {"cmd": "text", "id": "_session", "title": "Session", "markdown": f"**Started:** {now}"})
 ```
 
 Tell the user: "Canvas is live at `http://127.0.0.1:PORT`" — they may need to switch to that tab.
 
 ---
 
-## Helper (use in bash commands)
+## Helper
 
-```bash
-CANVAS_PORT=$(cat /tmp/canvas-${CLAUDE_CODE_SESSION_ID}.port)
-cx() { curl -s -X POST "http://127.0.0.1:${CANVAS_PORT}/cmd" -H 'Content-Type: application/json' -d "$1"; }
+Define `cx()` once per session, then call it for every widget:
+
+```python
+import urllib.request, json, os
+
+CANVAS_PORT = open(f"/tmp/canvas-{os.environ['CLAUDE_CODE_SESSION_ID']}.port").read().strip()
+
+def cx(payload: dict) -> dict:
+    data = json.dumps(payload).encode()
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{CANVAS_PORT}/cmd",
+        data=data,
+        headers={"Content-Type": "application/json"},
+    )
+    return json.loads(urllib.request.urlopen(req).read())
 ```
+
+Run via Bash with `uv run python3 -c "..."` or inline in a script. No extra dependencies — stdlib only.
 
 ---
 
@@ -60,71 +74,71 @@ cx() { curl -s -X POST "http://127.0.0.1:${CANVAS_PORT}/cmd" -H 'Content-Type: a
 All calls are JSON POSTs. The `cmd` field selects the method.
 
 ### `add` / `update` — Plotly chart
-```json
-{
-  "cmd": "add",
-  "id": "my-chart",
-  "spec": {
-    "traces": [
-      { "x": [...], "y": [...], "name": "Series A", "type": "scatter", "mode": "lines+markers" }
-    ],
-    "layout": {
-      "title": "Chart Title",
-      "yaxis": { "title": "Y label" }
-    },
-    "height": 360
-  }
-}
+```python
+cx({
+    "cmd": "add",
+    "id": "my-chart",
+    "spec": {
+        "traces": [
+            {"x": [...], "y": [...], "name": "Series A", "type": "scatter", "mode": "lines+markers"}
+        ],
+        "layout": {"title": "Chart Title", "yaxis": {"title": "Y label"}},
+        "height": 360,
+    }
+})
 ```
 `update` replaces an existing chart in place. Dark theme applied automatically — do not set `paper_bgcolor`/`plot_bgcolor`.
 
 ### `stream` — append live data point
-```json
-{ "cmd": "stream", "id": "price-chart", "traceIndex": 0, "point": { "x": "14:32:05", "y": 54.44 } }
+```python
+cx({"cmd": "stream", "id": "price-chart", "traceIndex": 0, "point": {"x": "14:32:05", "y": 54.44}})
 ```
 
 ### `metric` — KPI card row
-```json
-{
-  "cmd": "metric",
-  "id": "kpis",
-  "items": [
-    { "label": "Portfolio", "value": "$283,841", "delta": "+$8,320", "trend": "up", "sub": "since inception" },
-    { "label": "Cash",      "value": "$25,835",                                     "sub": "buying power" }
-  ]
-}
+```python
+cx({
+    "cmd": "metric",
+    "id": "kpis",
+    "items": [
+        {"label": "Portfolio", "value": "$283,841", "delta": "+$8,320", "trend": "up", "sub": "since inception"},
+        {"label": "Cash",      "value": "$25,835",                                      "sub": "buying power"},
+    ]
+})
 ```
-Key is `items`. `trend`: `"up"` | `"down"` | omit. `delta` and `sub` optional.
+`trend`: `"up"` | `"down"` | omit. `delta` and `sub` optional.
 
 ### `text` — markdown block
-```json
-{ "cmd": "text", "id": "analysis", "title": "Analysis", "markdown": "## Summary\n\n**Key finding** here." }
+```python
+cx({"cmd": "text", "id": "analysis", "title": "Analysis", "markdown": "## Summary\n\n**Key finding** here."})
 ```
-Key is `markdown`. Supports headers, bold, italic, inline code, fenced blocks, lists, hr.
+Supports headers, bold, italic, inline code, fenced blocks, lists, hr.
 
 ### `table` — sortable data table
-```json
-{
-  "cmd": "table",
-  "id": "positions",
-  "spec": {
-    "title": "Positions",
-    "columns": ["Symbol", "Value", "Gain %"],
-    "rows": [["AAPL", "$12,400", "+42.0%"], ["MSFT", "$8,200", "-3.1%"]]
-  }
-}
+```python
+cx({
+    "cmd": "table",
+    "id": "positions",
+    "spec": {
+        "title": "Positions",
+        "columns": ["Symbol", "Value", "Gain %"],
+        "rows": [
+            ["AAPL", "$12,400", "+42.0%"],
+            ["MSFT", "$8,200",  "-3.1%"],
+        ],
+    }
+})
 ```
 Click-sortable. `+`/`▲` cells green, `-`/`▼` cells red.
 
 ### `section` — full-width divider
-```json
-{ "cmd": "section", "id": "s1", "label": "Portfolio Overview" }
+```python
+cx({"cmd": "section", "id": "s1", "label": "Portfolio Overview"})
 ```
 
 ### `remove` / `clear`
-```json
-{ "cmd": "remove", "id": "my-chart" }
-{ "cmd": "clear" }
+```python
+cx({"cmd": "remove", "id": "my-chart"})
+cx({"cmd": "clear"})
 ```
 
 ---
@@ -138,21 +152,38 @@ Responsive 2-column grid. `section` and `metric` span full width. State persists
 ## Common Plotly patterns
 
 **Time series:**
-```bash
-cx '{"cmd":"add","id":"perf","spec":{"traces":[{"x":["2024-01","2024-02"],"y":[0,5.2],"name":"A","type":"scatter","mode":"lines"}],"layout":{"title":"Performance","yaxis":{"title":"% Return"}}}}'
+```python
+cx({"cmd": "add", "id": "perf", "spec": {
+    "traces": [{"x": ["2024-01", "2024-02"], "y": [0, 5.2], "name": "A", "type": "scatter", "mode": "lines"}],
+    "layout": {"title": "Performance", "yaxis": {"title": "% Return"}},
+}})
 ```
 
 **Bar with color gradient:**
-```bash
-cx '{"cmd":"add","id":"gains","spec":{"traces":[{"x":["A","B","C"],"y":[42,-8,15],"type":"bar","marker":{"color":[42,-8,15],"colorscale":[[0,"#f87171"],[0.5,"#ffb74d"],[1,"#81c784"]],"cmin":-30,"cmax":50}}],"layout":{"title":"Returns"}}}'
+```python
+cx({"cmd": "add", "id": "gains", "spec": {
+    "traces": [{"x": ["A", "B", "C"], "y": [42, -8, 15], "type": "bar",
+                "marker": {"color": [42, -8, 15],
+                           "colorscale": [[0, "#f87171"], [0.5, "#ffb74d"], [1, "#81c784"]],
+                           "cmin": -30, "cmax": 50}}],
+    "layout": {"title": "Returns"},
+}})
 ```
 
 **Donut:**
-```bash
-cx '{"cmd":"add","id":"alloc","spec":{"traces":[{"labels":["A","B","C"],"values":[60,25,15],"type":"pie","hole":0.55,"textinfo":"label+percent","textposition":"outside"}],"layout":{"title":"Allocation"}}}'
+```python
+cx({"cmd": "add", "id": "alloc", "spec": {
+    "traces": [{"labels": ["A", "B", "C"], "values": [60, 25, 15], "type": "pie",
+                "hole": 0.55, "textinfo": "label+percent", "textposition": "outside"}],
+    "layout": {"title": "Allocation"},
+}})
 ```
 
 **Candlestick:**
-```bash
-cx '{"cmd":"add","id":"candles","spec":{"traces":[{"x":["2024-01","2024-02"],"open":[100,105],"high":[110,115],"low":[95,100],"close":[105,110],"type":"candlestick"}],"layout":{"title":"OHLC","xaxis":{"rangeslider":{"visible":false}}}}}'
+```python
+cx({"cmd": "add", "id": "candles", "spec": {
+    "traces": [{"x": ["2024-01", "2024-02"], "open": [100, 105], "high": [110, 115],
+                "low": [95, 100], "close": [105, 110], "type": "candlestick"}],
+    "layout": {"title": "OHLC", "xaxis": {"rangeslider": {"visible": False}}},
+}})
 ```
