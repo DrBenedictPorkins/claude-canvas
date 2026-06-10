@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Canvas</title>
+<script src="./plotly.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0d0d0d;
+    --surface: #161616;
+    --border: #2a2a2a;
+    --text: #e8e8e8;
+    --text-dim: #666;
+    --accent: #4fc3f7;
+    --up: #81c784;
+    --down: #f87171;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 13px;
+    min-height: 100vh;
+  }
+
+  header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+
+  header h1 {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  header .controls { display: flex; gap: 8px; align-items: center; }
+
+  button {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: color 0.15s, border-color 0.15s;
+  }
+
+  button:hover { color: var(--text); border-color: #444; }
+  button.danger:hover { color: var(--down); border-color: var(--down); }
+
+  #grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(560px, 1fr));
+    gap: 12px;
+    padding: 12px;
+  }
+
+  /* ── Widget shell ── */
+  .widget {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+
+  .widget-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .widget-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-dim);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .widget-remove {
+    flex-shrink: 0;
+    font-size: 11px;
+    border: none;
+    color: #444;
+    padding: 2px 6px;
+  }
+  .widget-remove:hover { color: var(--down); border-color: transparent; }
+  .widget-body { padding: 0; }
+
+  /* ── Section divider ── */
+  .widget-section {
+    grid-column: 1 / -1;
+    background: none;
+    border: none;
+    border-top: 1px solid var(--border);
+    border-radius: 0;
+    padding: 8px 4px 0;
+  }
+  .widget-section .section-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+  }
+
+  /* ── Metric cards ── */
+  .metric-grid {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 0;
+    background: none;
+    border: none;
+    border-radius: 0;
+    overflow: visible;
+  }
+
+  .metric-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px 20px;
+    min-width: 160px;
+    flex: 1;
+    position: relative;
+  }
+
+  .metric-card .metric-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+  }
+
+  .metric-card .metric-value {
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--text);
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+
+  .metric-card .metric-delta {
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .metric-card .metric-delta.up   { color: var(--up); }
+  .metric-card .metric-delta.down { color: var(--down); }
+  .metric-card .metric-delta.flat { color: var(--text-dim); }
+
+  .metric-card .metric-sub {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+
+  .metric-card .metric-remove {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    font-size: 10px;
+    border: none;
+    color: #333;
+    padding: 2px 5px;
+  }
+  .metric-card .metric-remove:hover { color: var(--down); }
+
+  /* ── Text/markdown widget ── */
+  .text-body {
+    padding: 16px 18px;
+    line-height: 1.65;
+    font-size: 13px;
+    color: #ccc;
+    max-width: 100%;
+    overflow-wrap: break-word;
+  }
+  .text-body h3 { font-size: 15px; font-weight: 700; color: var(--text); margin: 12px 0 6px; }
+  .text-body h4 { font-size: 13px; font-weight: 700; color: var(--text); margin: 10px 0 4px; }
+  .text-body strong { color: var(--text); font-weight: 600; }
+  .text-body em { color: #aaa; font-style: italic; }
+  .text-body code { font-family: monospace; font-size: 12px; background: #1e1e1e; padding: 1px 5px; border-radius: 3px; color: var(--accent); }
+  .text-body pre { background: #1e1e1e; border: 1px solid var(--border); border-radius: 4px; padding: 10px 12px; overflow-x: auto; margin: 8px 0; }
+  .text-body pre code { background: none; padding: 0; }
+  .text-body ul, .text-body ol { padding-left: 18px; margin: 6px 0; }
+  .text-body li { margin: 3px 0; }
+  .text-body hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+  .text-body p { margin: 6px 0; }
+
+  /* ── Table widget ── */
+  .table-wrap {
+    overflow-x: auto;
+    max-height: 420px;
+    overflow-y: auto;
+  }
+
+  table.canvas-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+
+  table.canvas-table thead th {
+    position: sticky;
+    top: 0;
+    background: #1a1a1a;
+    color: var(--text-dim);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 8px 12px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+  }
+
+  table.canvas-table thead th:hover { color: var(--text); }
+  table.canvas-table thead th.sort-asc::after  { content: ' ↑'; color: var(--accent); }
+  table.canvas-table thead th.sort-desc::after { content: ' ↓'; color: var(--accent); }
+
+  table.canvas-table tbody tr:nth-child(even) { background: #111; }
+  table.canvas-table tbody tr:hover { background: #1e1e1e; }
+
+  table.canvas-table tbody td {
+    padding: 7px 12px;
+    border-bottom: 1px solid #1c1c1c;
+    color: var(--text);
+    white-space: nowrap;
+  }
+
+  table.canvas-table tbody td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  table.canvas-table tbody td.pos { color: var(--up); }
+  table.canvas-table tbody td.neg { color: var(--down); }
+
+  /* ── Empty state ── */
+  #empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: calc(100vh - 45px);
+    color: var(--text-dim);
+    gap: 8px;
+  }
+  #empty p { font-size: 13px; }
+  #empty code { font-size: 11px; color: #444; font-family: monospace; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Canvas</h1>
+  <div class="controls">
+    <span id="widget-count" style="color:var(--text-dim);line-height:26px;padding-right:4px;"></span>
+    <span id="ws-dot" title="Server disconnected" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#333;margin-right:8px;vertical-align:middle;transition:background 0.3s"></span>
+    <button class="danger" onclick="canvas.clear()">Clear all</button>
+  </div>
+</header>
+
+<div id="grid"></div>
+
+<div id="empty">
+  <p>No widgets yet.</p>
+  <code>canvas.add / canvas.metric / canvas.text / canvas.table</code>
+</div>
+
+<script>
+const STORAGE_KEY = 'canvas_widgets';
+
+const PLOTLY_DEFAULTS = {
+  paper_bgcolor: '#161616',
+  plot_bgcolor:  '#161616',
+  font: { color: '#e8e8e8', family: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', size: 12 },
+  margin: { t: 32, r: 16, b: 48, l: 56 },
+  xaxis:  { gridcolor: '#2a2a2a', linecolor: '#2a2a2a', zerolinecolor: '#2a2a2a' },
+  yaxis:  { gridcolor: '#2a2a2a', linecolor: '#2a2a2a', zerolinecolor: '#2a2a2a' },
+  legend: { bgcolor: 'transparent', bordercolor: '#2a2a2a' },
+  colorway: ['#4fc3f7','#81c784','#ffb74d','#f06292','#ce93d8','#4dd0e1','#fff176'],
+};
+
+const _widgets = new Map();
+
+function _save() {
+  const state = {};
+  _widgets.forEach((w, id) => { state[id] = w.spec; });
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch(_) {}
+}
+
+function _updateEmpty() {
+  const count = _widgets.size;
+  document.getElementById('empty').style.display = count ? 'none' : 'flex';
+  document.getElementById('widget-count').textContent = count ? `${count} widget${count > 1 ? 's' : ''}` : '';
+}
+
+function _mergeLayout(userLayout) {
+  return Object.assign({}, PLOTLY_DEFAULTS, userLayout, {
+    xaxis:         Object.assign({}, PLOTLY_DEFAULTS.xaxis,  userLayout?.xaxis),
+    yaxis:         Object.assign({}, PLOTLY_DEFAULTS.yaxis,  userLayout?.yaxis),
+    paper_bgcolor: PLOTLY_DEFAULTS.paper_bgcolor,
+    plot_bgcolor:  PLOTLY_DEFAULTS.plot_bgcolor,
+    font:          Object.assign({}, PLOTLY_DEFAULTS.font, userLayout?.font),
+  });
+}
+
+/* Shared card shell */
+function _makeCard(id, title, extraClass) {
+  const card = document.createElement('div');
+  card.className = 'widget' + (extraClass ? ' ' + extraClass : '');
+  card.dataset.id = id;
+
+  const hdr = document.createElement('div');
+  hdr.className = 'widget-header';
+
+  const ttl = document.createElement('div');
+  ttl.className = 'widget-title';
+  ttl.textContent = title || id;
+
+  const btn = document.createElement('button');
+  btn.className = 'widget-remove';
+  btn.textContent = '✕';
+  btn.onclick = () => canvas.remove(id);
+
+  hdr.appendChild(ttl);
+  hdr.appendChild(btn);
+  card.appendChild(hdr);
+  document.getElementById('grid').appendChild(card);
+  return { card, titleEl: ttl };
+}
+
+/* ── Plotly chart ── */
+function _buildChart(id, spec) {
+  const { card, titleEl } = _makeCard(id, spec.layout?.title?.text || spec.layout?.title);
+  const body = document.createElement('div');
+  body.className = 'widget-body';
+  const plotDiv = document.createElement('div');
+  plotDiv.style.height = spec.height ? `${spec.height}px` : '340px';
+  body.appendChild(plotDiv);
+  card.appendChild(body);
+
+  const layout = _mergeLayout(spec.layout || {});
+  Plotly.newPlot(plotDiv, spec.traces || [], Object.assign({}, layout, { title: undefined }), {
+    responsive: true, displayModeBar: true, displaylogo: false,
+    modeBarButtonsToRemove: ['sendDataToCloud'],
+  });
+  return { spec, el: card, plotDiv, titleEl };
+}
+
+/* ── Markdown parser (no deps) ── */
+function _md(src) {
+  let html = '';
+  const lines = src.split('\n');
+  let inPre = false, inUl = false, buf = '';
+
+  function flushUl() {
+    if (inUl) { html += '</ul>'; inUl = false; }
+  }
+  function inline(s) {
+    return s
+      .replace(/`([^`]+)`/g,      '<code>$1</code>')
+      .replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>')
+      .replace(/\*([^*]+)\*/g,    '<em>$1</em>');
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i];
+    if (l.startsWith('```')) {
+      flushUl();
+      if (!inPre) { html += '<pre><code>'; inPre = true; }
+      else         { html += '</code></pre>'; inPre = false; }
+      continue;
+    }
+    if (inPre) { html += l.replace(/</g,'&lt;').replace(/>/g,'&gt;') + '\n'; continue; }
+    if (l.match(/^---+$/)) { flushUl(); html += '<hr>'; continue; }
+    if (l.startsWith('### ')) { flushUl(); html += `<h3>${inline(l.slice(4))}</h3>`; continue; }
+    if (l.startsWith('## '))  { flushUl(); html += `<h4>${inline(l.slice(3))}</h4>`; continue; }
+    if (l.startsWith('# '))   { flushUl(); html += `<h3>${inline(l.slice(2))}</h3>`; continue; }
+    if (l.match(/^[-*] /))   {
+      if (!inUl) { html += '<ul>'; inUl = true; }
+      html += `<li>${inline(l.slice(2))}</li>`; continue;
+    }
+    flushUl();
+    if (l.trim() === '') { html += ''; continue; }
+    html += `<p>${inline(l)}</p>`;
+  }
+  flushUl();
+  if (inPre) html += '</code></pre>';
+  return html;
+}
+
+/* ── Table sort helper ── */
+function _attachSort(table, rows) {
+  let sortCol = -1, sortAsc = true;
+  table.querySelectorAll('thead th').forEach((th, ci) => {
+    th.addEventListener('click', () => {
+      if (sortCol === ci) sortAsc = !sortAsc;
+      else { sortCol = ci; sortAsc = true; }
+      table.querySelectorAll('thead th').forEach(h => h.className = '');
+      th.className = sortAsc ? 'sort-asc' : 'sort-desc';
+      const tbody = table.querySelector('tbody');
+      const trs = Array.from(tbody.querySelectorAll('tr'));
+      trs.sort((a, b) => {
+        const av = a.cells[ci]?.textContent.replace(/[$,%+]/g,'').trim() || '';
+        const bv = b.cells[ci]?.textContent.replace(/[$,%+]/g,'').trim() || '';
+        const an = parseFloat(av), bn = parseFloat(bv);
+        const cmp = (!isNaN(an) && !isNaN(bn)) ? an - bn : av.localeCompare(bv);
+        return sortAsc ? cmp : -cmp;
+      });
+      trs.forEach(tr => tbody.appendChild(tr));
+    });
+  });
+}
+
+window.canvas = {
+
+  /* Plotly chart */
+  add(id, spec) {
+    spec = Object.assign({ _type: 'chart' }, spec);
+    if (_widgets.has(id)) { this.update(id, spec); return; }
+    const w = _buildChart(id, spec);
+    _widgets.set(id, w);
+    _save(); _updateEmpty();
+  },
+
+  update(id, spec) {
+    const w = _widgets.get(id);
+    if (!w) { this.add(id, spec); return; }
+    spec = Object.assign({ _type: 'chart' }, spec);
+    if (w.titleEl) w.titleEl.textContent = spec.layout?.title?.text || spec.layout?.title || id;
+    if (spec.height && w.plotDiv) w.plotDiv.style.height = `${spec.height}px`;
+    const layout = _mergeLayout(spec.layout || {});
+    Plotly.react(w.plotDiv, spec.traces || [], Object.assign({}, layout, { title: undefined }));
+    w.spec = spec;
+    _save();
+  },
+
+  /* Append a single data point to an existing chart trace (live streaming) */
+  stream(id, traceIndex, point) {
+    const w = _widgets.get(id);
+    if (!w || !w.plotDiv) return;
+    Plotly.extendTraces(w.plotDiv, { x: [[point.x]], y: [[point.y]] }, [traceIndex]);
+  },
+
+  /* KPI metric card(s) — pass array for a row, object for single */
+  metric(id, specOrArray) {
+    const specs = Array.isArray(specOrArray) ? specOrArray : [specOrArray];
+    const savedSpec = { _type: 'metric', items: specs };
+
+    if (_widgets.has(id)) {
+      const w = _widgets.get(id);
+      w.el.querySelectorAll('.metric-card').forEach(c => c.remove());
+      specs.forEach(s => w.el.appendChild(_buildMetricCard(id, s)));
+      w.spec = savedSpec;
+      _save(); return;
+    }
+
+    const row = document.createElement('div');
+    row.className = 'widget metric-grid';
+    row.dataset.id = id;
+    specs.forEach(s => row.appendChild(_buildMetricCard(id, s)));
+    document.getElementById('grid').appendChild(row);
+    _widgets.set(id, { spec: savedSpec, el: row, plotDiv: null });
+    _save(); _updateEmpty();
+  },
+
+  /* Markdown text block */
+  text(id, markdown, title) {
+    const spec = { _type: 'text', markdown, title };
+    if (_widgets.has(id)) {
+      const w = _widgets.get(id);
+      if (w.titleEl) w.titleEl.textContent = title || id;
+      const body = w.el.querySelector('.text-body');
+      if (body) body.innerHTML = _md(markdown);
+      w.spec = spec; _save(); return;
+    }
+    const { card, titleEl } = _makeCard(id, title);
+    const body = document.createElement('div');
+    body.className = 'text-body';
+    body.innerHTML = _md(markdown);
+    card.appendChild(body);
+    _widgets.set(id, { spec, el: card, plotDiv: null, titleEl });
+    _save(); _updateEmpty();
+  },
+
+  /* Sortable table */
+  table(id, spec) {
+    spec = Object.assign({ _type: 'table' }, spec);
+    const title = spec.title || spec.layout?.title?.text || spec.layout?.title || id;
+
+    if (_widgets.has(id)) {
+      const w = _widgets.get(id);
+      if (w.titleEl) w.titleEl.textContent = title;
+      const wrap = w.el.querySelector('.table-wrap');
+      if (wrap) { wrap.innerHTML = ''; const t = _buildTable(spec); wrap.appendChild(t); _attachSort(t, spec.rows); }
+      w.spec = spec; _save(); return;
+    }
+
+    const { card, titleEl } = _makeCard(id, title);
+    const wrap = document.createElement('div');
+    wrap.className = 'table-wrap';
+    const t = _buildTable(spec);
+    wrap.appendChild(t);
+    card.appendChild(wrap);
+    _attachSort(t, spec.rows);
+    _widgets.set(id, { spec, el: card, plotDiv: null, titleEl });
+    _save(); _updateEmpty();
+  },
+
+  /* Full-width section divider */
+  section(id, label) {
+    const spec = { _type: 'section', label };
+    if (_widgets.has(id)) {
+      const w = _widgets.get(id);
+      const lbl = w.el.querySelector('.section-label');
+      if (lbl) lbl.textContent = label;
+      w.spec = spec; _save(); return;
+    }
+    const el = document.createElement('div');
+    el.className = 'widget widget-section';
+    el.dataset.id = id;
+    const lbl = document.createElement('span');
+    lbl.className = 'section-label';
+    lbl.textContent = label;
+    el.appendChild(lbl);
+    document.getElementById('grid').appendChild(el);
+    _widgets.set(id, { spec, el, plotDiv: null });
+    _save(); _updateEmpty();
+  },
+
+  remove(id) {
+    const w = _widgets.get(id);
+    if (!w) return;
+    if (w.plotDiv) Plotly.purge(w.plotDiv);
+    w.el.remove();
+    _widgets.delete(id);
+    _save(); _updateEmpty();
+  },
+
+  clear() {
+    _widgets.forEach(w => { if (w.plotDiv) Plotly.purge(w.plotDiv); w.el.remove(); });
+    _widgets.clear();
+    _save(); _updateEmpty();
+  },
+
+  list() { return Array.from(_widgets.keys()); },
+};
+
+/* ── Metric card builder ── */
+function _buildMetricCard(groupId, s) {
+  const card = document.createElement('div');
+  card.className = 'metric-card';
+
+  const btn = document.createElement('button');
+  btn.className = 'metric-remove widget-remove';
+  btn.textContent = '✕';
+  btn.onclick = () => canvas.remove(groupId);
+  card.appendChild(btn);
+
+  const lbl = document.createElement('div');
+  lbl.className = 'metric-label';
+  lbl.textContent = s.label || '';
+  card.appendChild(lbl);
+
+  const val = document.createElement('div');
+  val.className = 'metric-value';
+  val.textContent = s.value ?? '—';
+  card.appendChild(val);
+
+  if (s.delta !== undefined) {
+    const d = document.createElement('div');
+    d.className = 'metric-delta ' + (s.trend === 'up' ? 'up' : s.trend === 'down' ? 'down' : 'flat');
+    d.textContent = (s.trend === 'up' ? '▲ ' : s.trend === 'down' ? '▼ ' : '') + s.delta;
+    card.appendChild(d);
+  }
+  if (s.sub) {
+    const sub = document.createElement('div');
+    sub.className = 'metric-sub';
+    sub.textContent = s.sub;
+    card.appendChild(sub);
+  }
+  return card;
+}
+
+/* ── Table builder ── */
+function _buildTable(spec) {
+  const table = document.createElement('table');
+  table.className = 'canvas-table';
+
+  const thead = document.createElement('thead');
+  const hr = document.createElement('tr');
+  (spec.columns || []).forEach(col => {
+    const th = document.createElement('th');
+    th.textContent = typeof col === 'string' ? col : col.label;
+    hr.appendChild(th);
+  });
+  thead.appendChild(hr);
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  (spec.rows || []).forEach(row => {
+    const tr = document.createElement('tr');
+    row.forEach((cell, ci) => {
+      const td = document.createElement('td');
+      const col = spec.columns?.[ci];
+      const colType = typeof col === 'object' ? col.type : null;
+      td.textContent = cell ?? '';
+      if (colType === 'num' || (!isNaN(parseFloat(String(cell).replace(/[$,%+]/g,''))) && String(cell).match(/[$,%\d]/))) {
+        td.className = 'num';
+      }
+      const str = String(cell);
+      if (str.startsWith('+') || str.startsWith('▲')) td.classList.add('pos');
+      if (str.startsWith('-') || str.startsWith('▼')) td.classList.add('neg');
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  return table;
+}
+
+/* ── Restore from localStorage ── */
+(function restore() {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (!saved) return;
+    const state = JSON.parse(saved);
+    Object.entries(state).forEach(([id, spec]) => {
+      const t = spec._type;
+      if (t === 'metric')  canvas.metric(id, spec.items);
+      else if (t === 'text')    canvas.text(id, spec.markdown, spec.title);
+      else if (t === 'table')   canvas.table(id, spec);
+      else if (t === 'section') canvas.section(id, spec.label);
+      else canvas.add(id, spec);
+    });
+  } catch(_) {}
+  _updateEmpty();
+})();
+
+_updateEmpty();
+
+/* ── WebSocket client ── */
+if (window.location.protocol !== 'file:') {
+  (function () {
+    const dot = document.getElementById('ws-dot');
+
+    function _wsConnect() {
+      const ws = new WebSocket(`ws://${window.location.host}/ws`);
+
+      ws.onopen = function () {
+        dot.style.background = '#81c784';
+        dot.title = 'Server connected';
+      };
+
+      ws.onclose = function () {
+        dot.style.background = '#333';
+        dot.title = 'Server disconnected';
+        setTimeout(_wsConnect, 2000);
+      };
+
+      ws.onerror = function () {
+        dot.style.background = '#333';
+        dot.title = 'Server disconnected';
+        ws.close();
+      };
+
+      ws.onmessage = function (evt) {
+        let data;
+        try { data = JSON.parse(evt.data); } catch (_) { return; }
+        const cmd = data.cmd;
+        if (cmd === 'add')     canvas.add(data.id, data.spec);
+        else if (cmd === 'update')  canvas.update(data.id, data.spec);
+        else if (cmd === 'metric')  canvas.metric(data.id, data.items);
+        else if (cmd === 'text')    canvas.text(data.id, data.markdown, data.title);
+        else if (cmd === 'table')   canvas.table(data.id, data.spec);
+        else if (cmd === 'section') canvas.section(data.id, data.label);
+        else if (cmd === 'stream')  canvas.stream(data.id, data.traceIndex, data.point);
+        else if (cmd === 'remove')  canvas.remove(data.id);
+        else if (cmd === 'clear')   canvas.clear();
+      };
+
+      window._wsConnect = _wsConnect;
+    }
+
+    _wsConnect();
+  })();
+}
+</script>
+</body>
+</html>
