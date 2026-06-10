@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Canvas</title>
 <script src="./plotly.min.js"></script>
+<script src="./marked.min.js"></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -210,11 +211,14 @@
   .text-body li { margin: 3px 0; }
   .text-body hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
   .text-body p { margin: 6px 0; }
-  .text-body .md-table { width: 100%; border-collapse: collapse; font-size: 12px; margin: 8px 0; }
-  .text-body .md-table th { background: #1a1a1a; color: var(--text-dim); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; padding: 7px 12px; text-align: left; border-bottom: 1px solid var(--border); }
-  .text-body .md-table td { padding: 6px 12px; border-bottom: 1px solid #1c1c1c; color: var(--text); }
-  .text-body .md-table tbody tr:nth-child(even) { background: #111; }
-  .text-body .md-table tbody tr:hover { background: #1e1e1e; }
+  .text-body table { width: 100%; border-collapse: collapse; font-size: 12px; margin: 8px 0; }
+  .text-body table th { background: #1a1a1a; color: var(--text-dim); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; padding: 7px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+  .text-body table td { padding: 6px 12px; border-bottom: 1px solid #1c1c1c; color: var(--text); }
+  .text-body table tbody tr:nth-child(even) { background: #111; }
+  .text-body table tbody tr:hover { background: #1e1e1e; }
+  .text-body blockquote { border-left: 3px solid var(--border); margin: 8px 0; padding: 4px 12px; color: var(--text-dim); }
+  .text-body a { color: var(--accent); text-decoration: none; }
+  .text-body a:hover { text-decoration: underline; }
 
   /* ── Table widget ── */
   .table-wrap {
@@ -377,73 +381,9 @@ function _buildChart(id, spec) {
   return { spec, el: card, plotDiv, titleEl };
 }
 
-/* ── Markdown parser (no deps) ── */
-function _md(src) {
-  let html = '';
-  const lines = src.split('\n');
-  let inPre = false, inUl = false, inTable = false, tableRows = [];
-
-  function flushUl() {
-    if (inUl) { html += '</ul>'; inUl = false; }
-  }
-  function flushTable() {
-    if (!inTable) return;
-    inTable = false;
-    const parseRow = r => r.replace(/^\||\|$/g, '').split('|').map(c => c.trim());
-    const nonSep = tableRows.filter(r => !r.match(/^\|[\s:|-]+\|$/));
-    if (!nonSep.length) { tableRows = []; return; }
-    const headers = parseRow(nonSep[0]);
-    const body = nonSep.slice(1);
-    let t = '<table class="md-table"><thead><tr>';
-    headers.forEach(h => { t += `<th>${inline(h)}</th>`; });
-    t += '</tr></thead><tbody>';
-    body.forEach(row => {
-      const cells = parseRow(row);
-      t += '<tr>';
-      cells.forEach(c => { t += `<td>${inline(c)}</td>`; });
-      t += '</tr>';
-    });
-    t += '</tbody></table>';
-    html += t;
-    tableRows = [];
-  }
-  function inline(s) {
-    return s
-      .replace(/`([^`]+)`/g,      '<code>$1</code>')
-      .replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>')
-      .replace(/\*([^*]+)\*/g,    '<em>$1</em>');
-  }
-
-  for (let i = 0; i < lines.length; i++) {
-    const l = lines[i];
-    if (l.startsWith('```')) {
-      flushUl(); flushTable();
-      if (!inPre) { html += '<pre><code>'; inPre = true; }
-      else         { html += '</code></pre>'; inPre = false; }
-      continue;
-    }
-    if (inPre) { html += l.replace(/</g,'&lt;').replace(/>/g,'&gt;') + '\n'; continue; }
-    if (l.match(/^\|.+\|/)) {
-      flushUl();
-      inTable = true; tableRows.push(l); continue;
-    }
-    flushTable();
-    if (l.match(/^---+$/)) { flushUl(); html += '<hr>'; continue; }
-    if (l.startsWith('### ')) { flushUl(); html += `<h3>${inline(l.slice(4))}</h3>`; continue; }
-    if (l.startsWith('## '))  { flushUl(); html += `<h4>${inline(l.slice(3))}</h4>`; continue; }
-    if (l.startsWith('# '))   { flushUl(); html += `<h3>${inline(l.slice(2))}</h3>`; continue; }
-    if (l.match(/^[-*] /))   {
-      if (!inUl) { html += '<ul>'; inUl = true; }
-      html += `<li>${inline(l.slice(2))}</li>`; continue;
-    }
-    flushUl();
-    if (l.trim() === '') { html += ''; continue; }
-    html += `<p>${inline(l)}</p>`;
-  }
-  flushUl(); flushTable();
-  if (inPre) html += '</code></pre>';
-  return html;
-}
+/* ── Markdown via marked.js ── */
+marked.setOptions({ breaks: true, gfm: true });
+function _md(src) { return marked.parse(src); }
 
 /* ── Table sort helper ── */
 function _attachSort(table, rows) {
